@@ -1,0 +1,313 @@
+# Gaming-
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HAWAKUM BIKE GAMING</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#07111c;color:white;font-family:Arial,sans-serif}
+header{padding:12px;text-align:center;background:#081019}
+h1{font-size:21px;color:#00f5a0;margin:4px}
+header p{margin:6px;color:#bdcbd9;font-size:13px}
+#game{width:100%;height:66vh;min-height:360px;display:block;touch-action:none}
+.hud{position:absolute;top:95px;left:12px;z-index:2;
+background:#07111cbb;padding:10px 14px;border-radius:12px;
+font-weight:bold;line-height:1.7}
+#speed{color:#00f5a0}
+.controls{display:grid;grid-template-columns:repeat(4,1fr);
+gap:8px;padding:10px;max-width:500px;margin:auto}
+button{border:1px solid #3c566c;border-radius:13px;
+background:#172b3e;color:white;padding:16px 3px;
+font-size:16px;font-weight:bold;touch-action:none}
+button:active,.active{background:#00b879;color:#04130d}
+#start{display:block;margin:0 auto 10px;background:#00d890;
+color:#06120e;width:90%;max-width:480px}
+footer{text-align:center;font-size:12px;color:#b5c4d2;padding:8px}
+</style>
+<script type="importmap">
+{
+ "imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js"
+ }
+}
+</script>
+</head>
+<body>
+<header>
+<h1>🏍️ HAWAKUM BIKE GAMING</h1>
+<p>3D MOTORBIKE • CITY • HIGHWAY</p>
+</header>
+<div class="hud">
+<div>গতি: <span id="speed">0</span> km/h</div>
+<div>দূরত্ব: <span id="distance">0</span> m</div>
+<div id="place">শহর</div>
+</div>
+<div id="game"></div>
+<div class="controls">
+<button id="left">⬅️ বাম</button>
+<button id="right">➡️ ডান</button>
+<button id="gas">🏍️ গতি +</button>
+<button id="brake">🛑 ব্রেক</button>
+</div>
+<button id="start">▶ গেম শুরু / আবার শুরু</button>
+<footer>মোবাইল কন্ট্রোল ব্যবহার করে বাইক চালান</footer>
+
+<script type="module">
+import * as THREE from "three";
+
+const host=document.getElementById("game");
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x83c9f5);
+scene.fog=new THREE.Fog(0x83c9f5,45,180);
+
+const camera=new THREE.PerspectiveCamera(
+65,host.clientWidth/host.clientHeight,0.1,300
+);
+camera.position.set(0,5.2,10.5);
+
+let renderer;
+try{
+ renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:"low-power"});
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+ renderer.setSize(host.clientWidth,host.clientHeight);
+ renderer.shadowMap.enabled=false;
+ host.appendChild(renderer.domElement);
+}catch(e){
+ host.innerHTML="আপনার ব্রাউজারে WebGL চালু নেই। Chrome আপডেট করে চেষ্টা করুন।";
+ throw e;
+}
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x465a42,2));
+const sun=new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(-5,12,8);
+scene.add(sun);
+
+const mat=(color,roughness=0.85)=>new THREE.MeshStandardMaterial({color,roughness});
+const green=mat(0x559451),roadMat=mat(0x343943);
+const lineMat=mat(0xffffff),black=mat(0x151922);
+const red=mat(0xe72e39),silver=mat(0xb9c5d0);
+const blue=mat(0x087be0),glass=mat(0x78d7ed);
+const yellow=mat(0xffd84b);
+
+function box(parent,x,y,z,w,h,d,material){
+ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+ o.position.set(x,y,z);parent.add(o);return o;
+}
+function cylinder(parent,x,y,z,r1,r2,h,material,segments=12){
+ const o=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,segments),material);
+ o.position.set(x,y,z);parent.add(o);return o;
+}
+
+// ভূমি, মহাসড়ক ও সাদা লেন
+box(scene,0,-0.24,-55,180,0.4,250,green);
+box(scene,0,-0.015,-55,10,0.1,250,roadMat);
+for(const x of [-5.05,5.05]){
+ box(scene,x,0.05,-55,0.12,0.04,250,lineMat);
+}
+const laneLines=[];
+for(let z=-145;z<15;z+=8){
+ const l=box(scene,0,0.045,z,0.13,0.025,3.8,lineMat);
+ laneLines.push(l);
+}
+
+// বাইক মডেল: চাকায় ঘূর্ণন, বডি, হ্যান্ডেল ও চালক
+const bike=new THREE.Group();
+scene.add(bike);
+bike.position.set(0,0.12,2.2);
+
+function makeWheel(z){
+ const wheel=new THREE.Group();
+ wheel.position.set(0,0.48,z);
+ bike.add(wheel);
+ const tire=new THREE.Mesh(
+  new THREE.CylinderGeometry(0.43,0.43,0.20,16),black
+ );
+ tire.rotation.z=Math.PI/2;
+ wheel.add(tire);
+ const hub=new THREE.Mesh(
+  new THREE.CylinderGeometry(0.19,0.19,0.22,12),silver
+ );
+ hub.rotation.z=Math.PI/2;wheel.add(hub);
+ for(let i=0;i<6;i++){
+  const a=i*Math.PI/3;
+  const spoke=box(wheel,0,Math.cos(a)*0.22,
+   Math.sin(a)*0.22,0.23,0.035,0.035,silver);
+  spoke.rotation.x=a;
+ }
+ return wheel;
+}
+const rearWheel=makeWheel(0.8);
+const frontWheel=makeWheel(-1.05);
+
+box(bike,0,0.86,-0.15,0.40,0.30,1.5,red);
+box(bike,0,1.05,-0.48,0.32,0.26,0.65,black);
+box(bike,0,0.99,0.62,0.50,0.15,0.42,black);
+box(bike,0,0.70,-1.0,0.10,0.65,0.12,silver);
+box(bike,0,1.32,-1.12,0.85,0.07,0.08,black);
+box(bike,0,1.16,-1.19,0.25,0.18,0.12,yellow);
+
+// চালকের শরীর ও হেলমেট
+box(bike,0.0,1.47,-0.12,0.40,0.55,0.35,blue);
+cylinder(bike,0,1.88,-0.20,0.20,0.20,0.24,black);
+box(bike,0,1.90,-0.32,0.27,0.12,0.12,glass);
+
+// রাস্তার পাশে ভবন ও গাছ
+const roadside=[];
+function tree(x,z){
+ const g=new THREE.Group();scene.add(g);g.position.set(x,0,z);
+ cylinder(g,0,0.65,0,0.12,0.16,1.3,mat(0x68472c));
+ const crown=new THREE.Mesh(
+  new THREE.ConeGeometry(0.8,2.0,7),mat(0x24764b)
+ );
+ crown.position.y=2.0;g.add(crown);
+ roadside.push(g);
+}
+for(let z=-145;z<12;z+=10){
+ for(const side of [-1,1]){
+  const x=side*(8+Math.random()*8);
+  if(Math.random()<0.42){
+   tree(x,z);
+  }else{
+   const g=new THREE.Group();scene.add(g);
+   g.position.set(x,0,z);
+   const h=5+Math.random()*17;
+   const w=3+Math.random()*3;
+   const colors=[0x8796a6,0xc2a68a,0x728b9b,0xb7bdc8];
+   const building=box(g,0,h/2,0,w,h,4,mat(colors[Math.floor(Math.random()*colors.length)]));
+   building.material.side=THREE.DoubleSide;
+   for(let yy=1.2;yy<h-1;yy+=2.4){
+    for(let xx=-w/2+0.65;xx<w/2;xx+=1.15){
+     box(g,xx,yy,2.03,0.45,0.7,0.04,glass);
+    }
+   }
+   roadside.push(g);
+  }
+ }
+}
+
+// সামনে চলা গাড়ি
+const traffic=[];
+function makeCar(){
+ const g=new THREE.Group();
+ box(g,0,0.55,0,1.35,0.65,2.0,blue);
+ box(g,0,1.02,-0.15,1.05,0.45,0.85,glass);
+ for(const x of [-0.48,0.48]){
+  for(const z of [-0.65,0.65]){
+   const w=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.20,0.20,0.13,10),black
+   );
+   w.rotation.z=Math.PI/2;w.position.set(x,0.28,z);g.add(w);
+  }
+ }
+ scene.add(g);
+ return g;
+}
+for(let i=0;i<5;i++){
+ const car=makeCar();
+ car.position.set((Math.random()-0.5)*5,-0.03,-25-i*27);
+ traffic.push(car);
+}
+
+const keys={left:false,right:false,gas:false,brake:false};
+function bind(id,key){
+ const b=document.getElementById(id);
+ b.addEventListener("pointerdown",e=>{
+  e.preventDefault();keys[key]=true;b.classList.add("active");
+ });
+ const end=e=>{
+  e.preventDefault();keys[key]=false;b.classList.remove("active");
+ };
+ b.addEventListener("pointerup",end);
+ b.addEventListener("pointercancel",end);
+ b.addEventListener("lostpointercapture",end);
+}
+bind("left","left");bind("right","right");
+bind("gas","gas");bind("brake","brake");
+
+document.addEventListener("keydown",e=>{
+ if(e.key==="ArrowLeft")keys.left=true;
+ if(e.key==="ArrowRight")keys.right=true;
+ if(e.key==="ArrowUp")keys.gas=true;
+ if(e.key==="ArrowDown")keys.brake=true;
+});
+document.addEventListener("keyup",e=>{
+ if(e.key==="ArrowLeft")keys.left=false;
+ if(e.key==="ArrowRight")keys.right=false;
+ if(e.key==="ArrowUp")keys.gas=false;
+ if(e.key==="ArrowDown")keys.brake=false;
+});
+
+let speed=0,distance=0,playing=false,highway=false;
+const speedEl=document.getElementById("speed");
+const distEl=document.getElementById("distance");
+const placeEl=document.getElementById("place");
+
+document.getElementById("start").onclick=()=>{
+ speed=0;distance=0;bike.position.x=0;
+ playing=true;highway=false;
+ scene.background.set(0x83c9f5);
+ scene.fog.color.set(0x83c9f5);
+};
+
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),0.05);
+
+ if(playing){
+  if(keys.gas)speed=Math.min(speed+30*dt,180);
+  else speed=Math.max(speed-8*dt,0);
+  if(keys.brake)speed=Math.max(speed-70*dt,0);
+
+  const steering=(keys.left?1:0)-(keys.right?1:0);
+  bike.position.x-=steering*(2.5+speed/40)*dt;
+  bike.position.x=THREE.MathUtils.clamp(bike.position.x,-3.9,3.9);
+  bike.rotation.z=THREE.MathUtils.lerp(bike.rotation.z,
+   -steering*0.18,0.12);
+  const move=speed*dt*0.12;
+  distance+=move;
+  for(const l of laneLines){
+   l.position.z+=move;
+   if(l.position.z>7)l.position.z-=160;
+  }
+  for(const o of roadside){
+   o.position.z+=move;
+   if(o.position.z>8)o.position.z-=160;
+  }
+  for(const car of traffic){
+   car.position.z+=move*0.85;
+   if(car.position.z>7){
+    car.position.z=-120-Math.random()*30;
+    car.position.x=(Math.random()-0.5)*5;
+   }
+  }
+
+  if(distance>500&&!highway){
+   highway=true;
+   placeEl.textContent="মহাসড়ক";
+   scene.background.set(0xb4dafa);
+   scene.fog.color.set(0xb4dafa);
+  }
+  speedEl.textContent=Math.round(speed);
+  distEl.textContent=Math.floor(distance);
+ }
+
+ camera.position.x=THREE.MathUtils.lerp(camera.position.x,
+  bike.position.x*0.55,0.06);
+ camera.lookAt(bike.position.x*0.35,0.9,-3);
+ rearWheel.rotation.x-=speed*dt*0.06;
+ frontWheel.rotation.x-=speed*dt*0.06;
+ renderer.render(scene,camera);
+}
+const clock=new THREE.Clock();
+
+window.addEventListener("resize",()=>{
+ const w=host.clientWidth,h=host.clientHeight;
+ camera.aspect=w/h;camera.updateProjectionMatrix();
+ renderer.setSize(w,h);
+});
+animate();
+</script>
+</body>
+</html>
